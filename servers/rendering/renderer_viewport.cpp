@@ -316,13 +316,6 @@ void RendererViewport::_draw_3d(Viewport *p_viewport) {
 #ifndef _3D_DISABLED
 	RENDER_TIMESTAMP("> Render 3D Scene");
 
-	Ref<XRInterface> xr_interface;
-#ifndef XR_DISABLED
-	if (p_viewport->use_xr && XRServer::get_singleton() != nullptr) {
-		xr_interface = XRServer::get_singleton()->get_primary_interface();
-	}
-#endif // XR_DISABLED
-
 	if (p_viewport->use_occlusion_culling) {
 		if (p_viewport->occlusion_buffer_dirty) {
 			float aspect = p_viewport->size.aspect();
@@ -339,7 +332,7 @@ void RendererViewport::_draw_3d(Viewport *p_viewport) {
 	}
 
 	float screen_mesh_lod_threshold = p_viewport->mesh_lod_threshold / float(p_viewport->size.width);
-	RSG::scene->render_camera(p_viewport->render_buffers, p_viewport->camera, p_viewport->scenario, p_viewport->self, p_viewport->internal_size, p_viewport->jitter_phase_count, screen_mesh_lod_threshold, p_viewport->shadow_atlas, xr_interface, p_viewport->window_output_max_value, &p_viewport->render_info);
+	RSG::scene->render_camera(p_viewport->render_buffers, p_viewport->camera, p_viewport->scenario, p_viewport->self, p_viewport->internal_size, p_viewport->jitter_phase_count, screen_mesh_lod_threshold, p_viewport->shadow_atlas, p_viewport->window_output_max_value, &p_viewport->render_info);
 
 	RENDER_TIMESTAMP("< Render 3D Scene");
 #endif // _3D_DISABLED
@@ -395,6 +388,14 @@ void RendererViewport::_draw_viewport(Viewport *p_viewport) {
 	}
 
 	bool can_draw_3d = RSG::scene->is_camera(p_viewport->camera) && !p_viewport->disable_3d;
+
+#ifndef XR_DISABLED
+#if DEBUG_ENABLED
+	if (p_viewport->use_xr && !RSG::scene->is_xr_camera(p_viewport->camera)) {
+		WARN_PRINT("Viewport marked with use_xr but current camera is not an XRCamera3D");
+	}
+#endif
+#endif
 
 	if ((scenario_draw_canvas_bg || can_draw_3d) && !p_viewport->render_buffers.is_valid()) {
 		//wants to draw 3D but there is no render buffer, create
@@ -905,7 +906,21 @@ void RendererViewport::draw_viewports(bool p_swap_buffers) {
 					_viewport_set_force_motion_vectors(vp, false);
 				}
 
-				RSG::texture_storage->render_target_set_render_region(vp->render_target, xr_interface->get_render_region());
+				Rect2i region = xr_interface->get_render_region();
+
+				if (vp->size != vp->internal_size) {
+					region.size.width = region.size.width / double(vp->size.width) * double(vp->internal_size.width);
+					region.size.height = region.size.height / double(vp->size.height) * double(vp->internal_size.height);
+					region.position.x = region.position.x / double(vp->size.width) * double(vp->internal_size.width);
+					region.position.y = region.position.y / double(vp->size.height) * double(vp->internal_size.height);
+				}
+
+				// Sometimes the openxr swapchain has been recreated but the viewport has not been
+				// reconfigured yet, though they should be by the next frame.
+				ERR_CONTINUE(region.position.x + region.size.width > vp->internal_size.width ||
+						region.position.y + region.size.height > vp->internal_size.height);
+
+				RSG::texture_storage->render_target_set_render_region(vp->render_target, region);
 
 				// render...
 				RSG::scene->set_debug_draw_mode(vp->debug_draw);

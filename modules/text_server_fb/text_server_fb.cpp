@@ -324,6 +324,11 @@ _FORCE_INLINE_ TextServerFallback::FontTexturePosition TextServerFallback::find_
 
 #ifdef MODULE_MSDFGEN_ENABLED
 
+// FreeType outline coordinates are 26.6 fixed point, so one pixel is 64 units.
+// Godot versions before 4.8 used an incorrect divisor of 60, which can be
+// restored via the `gui/fonts/compatibility/msdf_legacy_scaling` project setting.
+static double ft_units_per_pixel = 64.0;
+
 struct MSContext {
 	msdfgen::Point2 position;
 	msdfgen::Shape *shape = nullptr;
@@ -352,7 +357,7 @@ struct MSDFThreadData {
 };
 
 static msdfgen::Point2 ft_point2(const FT_Vector &vector) {
-	return msdfgen::Point2(vector.x / 60.0f, vector.y / 60.0f);
+	return msdfgen::Point2(vector.x / ft_units_per_pixel, vector.y / ft_units_per_pixel);
 }
 
 static int ft_move_to(const FT_Vector *to, void *user) {
@@ -941,6 +946,7 @@ bool TextServerFallback::_ensure_cache_for_size(FontFallback *p_font_data, const
 			// When a font does not provide a `family_name`, FreeType tries to synthesize one based on other names.
 			// FreeType automatically converts non-ASCII characters to "?" in the synthesized name.
 			// To avoid that behavior, use the format-specific name directly if available.
+			p_font_data->font_name = String();
 			if (FT_IS_SFNT(p_font_data->face)) {
 				int name_count = FT_Get_Sfnt_Name_Count(p_font_data->face);
 				for (int i = 0; i < name_count; i++) {
@@ -1196,6 +1202,12 @@ void TextServerFallback::_font_set_face_index(const RID &p_font_rid, int64_t p_f
 	if (fd->face_index != p_face_index) {
 		fd->face_index = p_face_index;
 		_font_clear_cache(fd);
+#ifdef MODULE_FREETYPE_ENABLED
+		if (fd->face) {
+			FT_Done_Face(fd->face);
+			fd->face = nullptr;
+		}
+#endif
 	}
 }
 
@@ -5383,6 +5395,11 @@ void TextServerFallback::_update_settings() {
 TextServerFallback::TextServerFallback() {
 	_insert_feature_sets();
 	ProjectSettings::get_singleton()->connect("settings_changed", callable_mp(this, &TextServerFallback::_update_settings));
+#if defined(MODULE_MSDFGEN_ENABLED) && !defined(DISABLE_DEPRECATED)
+	if (GLOBAL_GET("gui/fonts/compatibility/msdf_legacy_scaling")) {
+		ft_units_per_pixel = 60.0;
+	}
+#endif
 }
 
 void TextServerFallback::_font_clear_system_fallback_cache() {

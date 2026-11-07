@@ -52,8 +52,12 @@ void XRInterfaceExtension::_bind_methods() {
 	GDVIRTUAL_BIND(_get_render_target_size);
 	GDVIRTUAL_BIND(_get_view_count);
 	GDVIRTUAL_BIND(_get_camera_transform);
+	GDVIRTUAL_BIND(_get_camera_projections, "tracker_name", "aspect", "z_near", "z_far");
+	GDVIRTUAL_BIND(_get_camera_offsets, "tracker_name");
+#ifndef DISABLE_DEPRECATED
 	GDVIRTUAL_BIND(_get_transform_for_view, "view", "cam_transform");
 	GDVIRTUAL_BIND(_get_projection_for_view, "view", "aspect", "z_near", "z_far");
+#endif
 	GDVIRTUAL_BIND(_get_vrs_texture);
 	GDVIRTUAL_BIND(_get_vrs_texture_format);
 
@@ -216,6 +220,27 @@ Transform3D XRInterfaceExtension::get_camera_transform() {
 	return transform;
 }
 
+TypedArray<Projection> XRInterfaceExtension::get_camera_projections(const StringName &p_tracker_name, double p_aspect, double p_z_near, double p_z_far) {
+	TypedArray<Projection> camera_projections;
+
+	if (GDVIRTUAL_CALL(_get_camera_projections, p_tracker_name, p_aspect, p_z_near, p_z_far, camera_projections)) {
+		return camera_projections;
+	}
+
+	return camera_projections;
+}
+
+TypedArray<Transform3D> XRInterfaceExtension::get_camera_offsets(const StringName &p_tracker_name) {
+	TypedArray<Transform3D> camera_offsets;
+
+	if (GDVIRTUAL_CALL(_get_camera_offsets, p_tracker_name, camera_offsets)) {
+		return camera_offsets;
+	}
+
+	return camera_offsets;
+}
+
+#ifndef DISABLE_DEPRECATED
 Transform3D XRInterfaceExtension::get_transform_for_view(uint32_t p_view, const Transform3D &p_cam_transform) {
 	Transform3D transform;
 	GDVIRTUAL_CALL(_get_transform_for_view, p_view, p_cam_transform, transform);
@@ -237,6 +262,7 @@ Projection XRInterfaceExtension::get_projection_for_view(uint32_t p_view, double
 
 	return Projection();
 }
+#endif
 
 RID XRInterfaceExtension::get_vrs_texture() {
 	RID vrs_texture;
