@@ -1583,9 +1583,33 @@ void AnimationPlayerEditor::_animation_key_editor_seek(float p_pos, bool p_timel
 }
 
 void AnimationPlayerEditor::_animation_update_key_frame() {
-	if (player) {
-		player->advance(0);
+	if (!player || player->is_playing()) {
+		return; // While playing, the next process tick re-reads the edited keys anyway.
 	}
+	// 🪦 advance(0) was here, and it left every UPDATE_DISCRETE track showing the pre-edit key:
+	// a discrete value track is only written on the seeked branch of _blend_process, and
+	// seek_internal clears PlaybackInfo::seeked the moment it has applied. So the edit landed in
+	// the Animation and nothing re-applied it. Re-seek to the same position instead.
+	player->seek_internal(player->get_current_animation_position(), true, true, false);
+}
+
+// An edit to one key's VALUE should draw that key, not whatever the playhead currently interpolates
+// — editing a frame two keys away from the playhead otherwise changes nothing on screen, which is
+// indistinguishable from the edit not landing (owner, 2026-11-14).
+void AnimationPlayerEditor::_animation_show_key_frame(double p_time) {
+	if (!player || player->is_playing() || !player->has_animation(player->get_assigned_animation())) {
+		return;
+	}
+	// Deliberately NOT routed through _animation_key_editor_seek / _seek_value_changed: those snap
+	// the position to the timeline step, and a continuous track sampled a step-epsilon off its key
+	// interpolates toward the neighbour — an int property (Sprite2D:frame) then shows the frame
+	// before the one just typed. The key's own time is exact by construction.
+	timeline_position = p_time;
+	updating = true;
+	frame->set_value(p_time);
+	updating = false;
+	player->seek_internal(p_time, true, true, false);
+	track_editor->set_anim_pos(p_time);
 }
 
 void AnimationPlayerEditor::_animation_tool_menu(int p_option) {
@@ -2052,6 +2076,7 @@ void AnimationPlayerEditor::_bind_methods() {
 	// Needed for UndoRedo.
 	ClassDB::bind_method(D_METHOD("_animation_player_changed"), &AnimationPlayerEditor::_animation_player_changed);
 	ClassDB::bind_method(D_METHOD("_animation_update_key_frame"), &AnimationPlayerEditor::_animation_update_key_frame);
+	ClassDB::bind_method(D_METHOD("_animation_show_key_frame", "time"), &AnimationPlayerEditor::_animation_show_key_frame);
 	ClassDB::bind_method(D_METHOD("_start_onion_skinning"), &AnimationPlayerEditor::_start_onion_skinning);
 	ClassDB::bind_method(D_METHOD("_stop_onion_skinning"), &AnimationPlayerEditor::_stop_onion_skinning);
 
