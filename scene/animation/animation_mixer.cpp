@@ -781,6 +781,7 @@ bool AnimationMixer::_update_caches() {
 								} else {
 									track_value->init_value = (reset_anim->track_get_key_value(rt, 0).operator Array())[0];
 								}
+								track_value->init_from_reset = true;
 							}
 						}
 
@@ -1915,7 +1916,7 @@ void AnimationMixer::_blend_apply() {
 	for (const KeyValue<Animation::TrackCacheID, TrackCache *> &K : track_cache) {
 		TrackCache *track = K.value;
 		bool is_zero_amount = Math::is_zero_approx(track->total_weight);
-		if (!deterministic && is_zero_amount) {
+		if (!deterministic && is_zero_amount && !_track_falls_back_to_reset(track)) {
 			continue;
 		}
 		switch (track->type) {
@@ -1984,22 +1985,40 @@ void AnimationMixer::_blend_apply() {
 			case Animation::TYPE_VALUE: {
 				TrackCacheValue *t = static_cast<TrackCacheValue *>(track);
 
-				if (callback_mode_discrete == ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS) {
-					t->is_init = false; // Always update in Force Continuous.
-				} else if (!t->use_continuous && (t->use_discrete || !deterministic)) {
-					t->is_init = true; // If there is no continuous value and only disctere value is applied or just started, don't RESET.
-				}
+				if (_track_falls_back_to_reset(t)) {
+					// [doggo] Here is_init means only "RESET was written since an animation last drove this track". Upstream
+					// it also means "a discrete key owns the value", which is why a discrete track held its last key once its
+					// animation stopped driving it while a continuous one reset (and, non-deterministic, neither reset).
+					if (is_zero_amount) {
+						if (t->is_init) {
+							break; // Written once; a script may have changed it since.
+						}
+						t->is_init = true;
+					} else {
+						t->is_init = false;
+						if (!t->use_continuous ||
+								(callback_mode_discrete == ANIMATION_CALLBACK_MODE_DISCRETE_DOMINANT && t->use_discrete)) {
+							break; // _blend_process already applied the discrete key, or no key was crossed this frame.
+						}
+					}
+				} else {
+					if (callback_mode_discrete == ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS) {
+						t->is_init = false; // Always update in Force Continuous.
+					} else if (!t->use_continuous && (t->use_discrete || !deterministic)) {
+						t->is_init = true; // If there is no continuous value and only disctere value is applied or just started, don't RESET.
+					}
 
-				if ((t->is_init && (is_zero_amount || !t->use_continuous)) ||
-						(callback_mode_discrete != ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS &&
-								!is_zero_amount &&
-								callback_mode_discrete == ANIMATION_CALLBACK_MODE_DISCRETE_DOMINANT &&
-								t->use_discrete)) {
-					break; // Don't overwrite the value set by UPDATE_DISCRETE.
-				}
+					if ((t->is_init && (is_zero_amount || !t->use_continuous)) ||
+							(callback_mode_discrete != ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS &&
+									!is_zero_amount &&
+									callback_mode_discrete == ANIMATION_CALLBACK_MODE_DISCRETE_DOMINANT &&
+									t->use_discrete)) {
+						break; // Don't overwrite the value set by UPDATE_DISCRETE.
+					}
 
-				if (callback_mode_discrete != ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS) {
-					t->is_init = !t->use_continuous; // If there is no Continuous in non-Force Continuous type, it means RESET.
+					if (callback_mode_discrete != ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS) {
+						t->is_init = !t->use_continuous; // If there is no Continuous in non-Force Continuous type, it means RESET.
+					}
 				}
 
 				// Trim unused elements if init array/string is not blended.
@@ -2083,6 +2102,15 @@ void AnimationMixer::_blend_apply() {
 			} // The rest don't matter.
 		}
 	}
+}
+
+bool AnimationMixer::_track_falls_back_to_reset(const TrackCache *p_track) const {
+	// [doggo] A deterministic Force Continuous mixer (AnimationTree's default) already rewrites init_value into every
+	// track no animation drives, every frame, so it keeps the upstream path.
+	if (p_track->type != Animation::TYPE_VALUE || (deterministic && callback_mode_discrete == ANIMATION_CALLBACK_MODE_DISCRETE_FORCE_CONTINUOUS)) {
+		return false;
+	}
+	return static_cast<const TrackCacheValue *>(p_track)->init_from_reset;
 }
 
 void AnimationMixer::_call_object(ObjectID p_object_id, const StringName &p_method, const Vector<Variant> &p_params, bool p_deferred) {

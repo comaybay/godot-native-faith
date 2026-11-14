@@ -231,6 +231,9 @@ protected:
 		bool use_discrete = false;
 		bool is_using_angle = false;
 		bool is_variant_interpolatable = true;
+		// [doggo] init_value is the RESET animation's first key, not the type's zero. Such a track falls back to it
+		// once no playing animation drives it (_track_falls_back_to_reset); any other track keeps its last value.
+		bool init_from_reset = false;
 
 		Variant element_size;
 
@@ -244,6 +247,7 @@ protected:
 				use_discrete(p_other.use_discrete),
 				is_using_angle(p_other.is_using_angle),
 				is_variant_interpolatable(p_other.is_variant_interpolatable),
+				init_from_reset(p_other.init_from_reset),
 				element_size(p_other.element_size) {}
 
 		TrackCacheValue() { type = Animation::TYPE_VALUE; }
@@ -371,6 +375,7 @@ protected:
 	void _blend_calc_total_weight(); // For indeterministic blending.
 	void _blend_process(double p_delta, bool p_update_only = false);
 	void _blend_apply();
+	bool _track_falls_back_to_reset(const TrackCache *p_track) const;
 	virtual void _blend_post_process();
 	void _call_object(ObjectID p_object_id, const StringName &p_method, const Vector<Variant> &p_params, bool p_deferred);
 
