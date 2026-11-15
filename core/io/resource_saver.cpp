@@ -286,6 +286,16 @@ ResourceUID::ID ResourceSaver::get_resource_id_for_path(const String &p_path, bo
 	if (save_get_id_for_path) {
 		return save_get_id_for_path(p_path, p_generate);
 	}
+	// [doggo] Only the editor installs save_get_id_for_path (EditorFileSystem). Without a fallback, a .tres
+	// saved from a running game or F6 tool scene writes no header uid and no ext_resource uids, so the
+	// editor's FileSystem search and Quick Open stop finding the file.
+	const ResourceUID::ID existing = ResourceLoader::get_resource_uid(p_path);
+	if (existing != ResourceUID::INVALID_ID) {
+		return existing;
+	}
+	if (p_generate) {
+		return ResourceUID::get_singleton()->create_id();
+	}
 	return ResourceUID::INVALID_ID;
 }
 
