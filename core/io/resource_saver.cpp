@@ -294,7 +294,12 @@ ResourceUID::ID ResourceSaver::get_resource_id_for_path(const String &p_path, bo
 		return existing;
 	}
 	if (p_generate) {
-		return ResourceUID::get_singleton()->create_id();
+		// [doggo] Register it now: outside the editor ResourceLoader::get_resource_uid reads only ResourceUID's
+		// table, so an unregistered id is lost to the next save in the same run, and a form saved after the mesh
+		// it references writes that ext_resource without its uid.
+		const ResourceUID::ID id = ResourceUID::get_singleton()->create_id();
+		ResourceUID::get_singleton()->add_id(id, ProjectSettings::get_singleton()->localize_path(p_path));
+		return id;
 	}
 	return ResourceUID::INVALID_ID;
 }
