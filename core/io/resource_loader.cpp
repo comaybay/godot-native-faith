@@ -1386,7 +1386,13 @@ void ResourceLoader::get_classes_used(const String &p_path, HashSet<StringName> 
 String ResourceLoader::get_resource_type(const String &p_path) {
 	String local_path = _validate_local_path(p_path);
 
+	// Only a loader that would load the path may name its type, as in _load(). Asking every loader made the importer
+	// open `<path>.import` and the binary loader open the file itself for every query: GDScript asks once per global
+	// class reference it compiles, which was a sixth of a game's script loading spent opening files.
 	for (int i = 0; i < loader_count; i++) {
+		if (!loader[i]->recognize_path(local_path)) {
+			continue;
+		}
 		String result = loader[i]->get_resource_type(local_path);
 		if (!result.is_empty()) {
 			return result;
