@@ -168,7 +168,7 @@ const char *GDScriptTokenizer::Token::get_name() const {
 String GDScriptTokenizer::Token::get_debug_name() const {
 	switch (type) {
 		case IDENTIFIER:
-			return vformat(R"(identifier "%s")", source);
+			return vformat(R"(identifier "%s")", literal);
 		default:
 			return vformat(R"("%s")", get_name());
 	}
@@ -359,7 +359,6 @@ GDScriptTokenizer::Token GDScriptTokenizerText::make_token(Token::Type p_type) {
 	token.end_line = line;
 	token.start_column = start_column;
 	token.end_column = column;
-	token.source = String::utf32(Span(_start, _current - _start));
 
 	if (p_type != Token::ERROR && cursor_line > -1) {
 		// Also count whitespace after token.
@@ -479,7 +478,7 @@ GDScriptTokenizer::Token GDScriptTokenizerText::annotation() {
 		_advance();
 	}
 	Token annotation = make_token(Token::ANNOTATION);
-	annotation.literal = StringName(annotation.source);
+	annotation.literal = StringName(String::utf32(Span(_start, _current - _start)));
 	return annotation;
 }
 
@@ -1217,11 +1216,11 @@ void GDScriptTokenizerText::check_indent() {
 		if (_peek() == '#') {
 			// Comment. Advance to the next line.
 #ifdef TOOLS_ENABLED
-			String comment;
+			const char32_t *comment_start = _current;
 			while (_peek() != '\n' && !_is_at_end()) {
-				comment += _advance();
+				_advance();
 			}
-			comments[line] = CommentData(comment, true);
+			comments[line] = CommentData(String::utf32(Span(comment_start, _current - comment_start)), true);
 #else
 			while (_peek() != '\n' && !_is_at_end()) {
 				_advance();
@@ -1344,11 +1343,11 @@ void GDScriptTokenizerText::_skip_whitespace() {
 			case '#': {
 				// Comment.
 #ifdef TOOLS_ENABLED
-				String comment;
+				const char32_t *comment_start = _current;
 				while (_peek() != '\n' && !_is_at_end()) {
-					comment += _advance();
+					_advance();
 				}
-				comments[line] = CommentData(comment, is_bol);
+				comments[line] = CommentData(String::utf32(Span(comment_start, _current - comment_start)), is_bol);
 #else
 				while (_peek() != '\n' && !_is_at_end()) {
 					_advance();

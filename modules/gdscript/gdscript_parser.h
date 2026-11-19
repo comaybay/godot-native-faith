@@ -1580,11 +1580,25 @@ private:
 	GDScriptTokenizer::Token advance();
 	bool match(GDScriptTokenizer::Token::Type p_token_type);
 	bool check(GDScriptTokenizer::Token::Type p_token_type) const;
-	bool consume(GDScriptTokenizer::Token::Type p_token_type, const String &p_error_message);
+	// The message, and any `vformat` of it with `p_args`, is built only when the token is missing. Taking a built String
+	// made every successful consume() allocate (and format) a message nobody read.
+	template <typename... VarArgs>
+	bool consume(GDScriptTokenizer::Token::Type p_token_type, const char *p_error_message, const VarArgs &...p_args) {
+		if (match(p_token_type)) {
+			return true;
+		}
+		if constexpr (sizeof...(p_args) == 0) {
+			push_error(p_error_message);
+		} else {
+			push_error(vformat(p_error_message, p_args...));
+		}
+		return false;
+	}
 	bool is_at_end() const;
 	bool is_statement_end_token() const;
 	bool is_statement_end() const;
-	void end_statement(const String &p_context);
+	// A literal, read only for an error message: once per statement, so never a built String.
+	void end_statement(const char *p_context);
 	void synchronize();
 	void push_multiline(bool p_state);
 	void pop_multiline();
@@ -1602,7 +1616,8 @@ private:
 	ParameterNode *parse_parameter();
 	FunctionNode *parse_function(bool p_is_static);
 	bool parse_function_signature(FunctionNode *p_function, SuiteNode *p_body, const String &p_type, int p_signature_start);
-	SuiteNode *parse_suite(const String &p_context, SuiteNode *p_suite = nullptr, bool p_for_lambda = false);
+	// `p_context` is a literal read only for error messages, like end_statement's.
+	SuiteNode *parse_suite(const char *p_context, SuiteNode *p_suite = nullptr, bool p_for_lambda = false);
 	// Annotations
 	AnnotationNode *parse_annotation(uint32_t p_valid_targets);
 	static bool register_annotation(const MethodInfo &p_info, uint32_t p_target_kinds, AnnotationAction p_apply, const Vector<Variant> &p_default_arguments = Vector<Variant>(), bool p_is_vararg = false);
@@ -1636,7 +1651,7 @@ private:
 	BreakNode *parse_break();
 	ContinueNode *parse_continue();
 	ForNode *parse_for();
-	IfNode *parse_if(const String &p_token = "if");
+	IfNode *parse_if(bool p_is_elif = false);
 	MatchNode *parse_match();
 	MatchBranchNode *parse_match_branch();
 	PatternNode *parse_match_pattern(PatternNode *p_root_pattern = nullptr);

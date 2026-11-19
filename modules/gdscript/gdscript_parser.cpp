@@ -613,14 +613,6 @@ bool GDScriptParser::check(GDScriptTokenizer::Token::Type p_token_type) const {
 	return current.type == p_token_type;
 }
 
-bool GDScriptParser::consume(GDScriptTokenizer::Token::Type p_token_type, const String &p_error_message) {
-	if (match(p_token_type)) {
-		return true;
-	}
-	push_error(p_error_message);
-	return false;
-}
-
 bool GDScriptParser::is_at_end() const {
 	return check(GDScriptTokenizer::Token::TK_EOF);
 }
@@ -680,7 +672,7 @@ bool GDScriptParser::is_statement_end() const {
 	return lambda_ended || in_lambda || is_statement_end_token();
 }
 
-void GDScriptParser::end_statement(const String &p_context) {
+void GDScriptParser::end_statement(const char *p_context) {
 	bool found = false;
 	while (is_statement_end() && !is_at_end()) {
 		// Remove sequential newlines/semicolons.
@@ -1613,7 +1605,7 @@ GDScriptParser::EnumNode *GDScriptParser::parse_enum(bool p_is_static) {
 	}
 
 	push_multiline(true);
-	consume(GDScriptTokenizer::Token::BRACE_OPEN, vformat(R"(Expected "{" after %s.)", named ? "enum name" : R"("enum")"));
+	consume(GDScriptTokenizer::Token::BRACE_OPEN, R"(Expected "{" after %s.)", named ? "enum name" : R"("enum")");
 #ifdef TOOLS_ENABLED
 	int min_enum_value_doc_line = previous.end_line + 1;
 #endif
@@ -1752,7 +1744,7 @@ bool GDScriptParser::parse_function_signature(FunctionNode *p_function, SuiteNod
 	}
 
 	pop_multiline();
-	consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, vformat(R"*(Expected closing ")" after %s parameters.)*", p_type));
+	consume(GDScriptTokenizer::Token::PARENTHESIS_CLOSE, R"*(Expected closing ")" after %s parameters.)*", p_type);
 
 	if (match(GDScriptTokenizer::Token::FORWARD_ARROW)) {
 		make_completion_context(COMPLETION_TYPE_NAME_OR_VOID, p_function);
@@ -1952,7 +1944,7 @@ bool GDScriptParser::register_annotation(const MethodInfo &p_info, uint32_t p_ta
 	return true;
 }
 
-GDScriptParser::SuiteNode *GDScriptParser::parse_suite(const String &p_context, SuiteNode *p_suite, bool p_for_lambda) {
+GDScriptParser::SuiteNode *GDScriptParser::parse_suite(const char *p_context, SuiteNode *p_suite, bool p_for_lambda) {
 	SuiteNode *suite = p_suite != nullptr ? p_suite : alloc_node<SuiteNode>();
 	suite->parent_block = current_suite;
 	suite->parent_function = current_function;
@@ -1970,7 +1962,7 @@ GDScriptParser::SuiteNode *GDScriptParser::parse_suite(const String &p_context, 
 	}
 
 	if (multiline) {
-		if (!consume(GDScriptTokenizer::Token::INDENT, vformat(R"(Expected indented block after %s.)", p_context))) {
+		if (!consume(GDScriptTokenizer::Token::INDENT, R"(Expected indented block after %s.)", p_context)) {
 			current_suite = suite->parent_block;
 			complete_extents(suite);
 			return suite;
@@ -2030,13 +2022,13 @@ GDScriptParser::SuiteNode *GDScriptParser::parse_suite(const String &p_context, 
 
 	if (multiline) {
 		if (!lambda_ended) {
-			consume(GDScriptTokenizer::Token::DEDENT, vformat(R"(Missing unindent at the end of %s.)", p_context));
+			consume(GDScriptTokenizer::Token::DEDENT, R"(Missing unindent at the end of %s.)", p_context);
 
 		} else {
 			match(GDScriptTokenizer::Token::DEDENT);
 		}
 	} else if (previous.type == GDScriptTokenizer::Token::SEMICOLON) {
-		consume(GDScriptTokenizer::Token::NEWLINE, vformat(R"(Expected newline after ";" at the end of %s.)", p_context));
+		consume(GDScriptTokenizer::Token::NEWLINE, R"(Expected newline after ";" at the end of %s.)", p_context);
 	}
 
 	if (p_for_lambda) {
@@ -2382,19 +2374,20 @@ GDScriptParser::ForNode *GDScriptParser::parse_for() {
 	return n_for;
 }
 
-GDScriptParser::IfNode *GDScriptParser::parse_if(const String &p_token) {
+GDScriptParser::IfNode *GDScriptParser::parse_if(bool p_is_elif) {
+	const char *keyword = p_is_elif ? "elif" : "if";
 	IfNode *n_if = alloc_node<IfNode>();
 
 	n_if->condition = parse_expression(false);
 	if (n_if->condition == nullptr) {
-		push_error(vformat(R"(Expected conditional expression after "%s".)", p_token));
+		push_error(vformat(R"(Expected conditional expression after "%s".)", keyword));
 	}
 
 	if (!match(GDScriptTokenizer::Token::COLON)) {
-		push_error(vformat(R"(Expected ":" after "%s" condition, found "%s" instead.)", p_token, current.get_name()), current);
+		push_error(vformat(R"(Expected ":" after "%s" condition, found "%s" instead.)", keyword, current.get_name()), current);
 	}
 
-	n_if->true_block = parse_suite(vformat(R"("%s" block)", p_token));
+	n_if->true_block = parse_suite(p_is_elif ? R"("elif" block)" : R"("if" block)");
 	n_if->true_block->parent_if = n_if;
 
 	if (n_if->true_block->has_continue) {
@@ -2409,7 +2402,7 @@ GDScriptParser::IfNode *GDScriptParser::parse_if(const String &p_token) {
 		SuiteNode *previous_suite = current_suite;
 		current_suite = else_block;
 
-		IfNode *elif = parse_if("elif");
+		IfNode *elif = parse_if(true);
 		else_block->statements.push_back(elif);
 		complete_extents(else_block);
 		n_if->false_block = else_block;
@@ -2567,7 +2560,7 @@ GDScriptParser::MatchBranchNode *GDScriptParser::parse_match_branch() {
 		branch->has_wildcard = false; // If it has a guard, the wildcard might still not match.
 	}
 
-	if (!consume(GDScriptTokenizer::Token::COLON, vformat(R"(Expected ":"%s after "match" %s.)", has_guard ? "" : R"( or "when")", has_guard ? "pattern guard" : "patterns"))) {
+	if (!consume(GDScriptTokenizer::Token::COLON, R"(Expected ":"%s after "match" %s.)", has_guard ? "" : R"( or "when")", has_guard ? "pattern guard" : "patterns")) {
 		branch->block = alloc_recovery_suite();
 		complete_extents(branch);
 		// Consume the whole line and treat the next one as new match branch.

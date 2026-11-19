@@ -173,7 +173,6 @@ public:
 		int end_line = 1;
 		int end_column = 1;
 		CursorPlace cursor_place = CURSOR_NONE;
-		String source;
 
 		const char *get_name() const;
 		String get_debug_name() const;
