@@ -398,6 +398,10 @@ MethodInfo GDScript::get_method_info(const StringName &p_method) const {
 
 bool GDScript::get_property_default_value(const StringName &p_property, Variant &r_value) const {
 #ifdef TOOLS_ENABLED
+	// Outside the editor, reload() leaves the export caches for here. A no-op once they are current.
+	if (!Engine::get_singleton()->is_editor_hint()) {
+		const_cast<GDScript *>(this)->_update_exports();
+	}
 
 	HashMap<StringName, Variant>::ConstIterator E = member_default_values_cache.find(p_property);
 	if (E) {
@@ -906,7 +910,10 @@ Error GDScript::reload(bool p_keep_state) {
 		_restore_old_static_data();
 	}
 
-	if (p_keep_state) {
+	// Only the editor shows exports, so only the editor refreshes them on reload. A game run on an editor binary builds
+	// them on first use instead (`get_property_default_value`): refreshing re-parses and re-analyzes the script, which
+	// was a fifth of a game's script loading.
+	if (p_keep_state && Engine::get_singleton()->is_editor_hint()) {
 		// Update the properties in the inspector.
 		update_exports();
 	}
